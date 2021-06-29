@@ -4,6 +4,7 @@ import pandas as pd
 import scipy
 import seaborn as sns
 
+
 class Sim():
 
     def __init__(self):
@@ -12,8 +13,8 @@ class Sim():
         self.N_TIMESTEPS = 100
         self.N_NEIGHBORHOODS = 2
         self.INCOME_GROWTH = 0   # alpha in eq(1)
-        self.INCOME_MOBILITY_COEF = 0  # beta in eq(1)
-        self.INCOME_NOISE_AUTOREG = 0 
+        self.INCOME_MOBILITY_COEF = 1  # beta in eq(1)
+        self.INCOME_NOISE_AUTOREG = 1 
         self.TAX_RATE = .5
         self.PREF_CONSUMPTION = .5
         self.PREF_INCOME = 1 - self.PREF_CONSUMPTION
@@ -180,10 +181,21 @@ class SimResultAggData():
         self.trial_data = []
         self.keep_trials = keep_trials
 
+    @classmethod
+    def gini(cls, income):
+        """ income is ordered time x family """
+        min_income = income.min(axis=1).reshape((income.shape[0], 1))
+        min_income[min_income > 0] = 0
+        positive_income = income - min_income
+        total_income = positive_income.sum(axis=1).reshape((income.shape[0], 1))
+        lorenz = np.sort(positive_income, axis=1).cumsum(axis=1) / total_income
+        return .5 - (lorenz.sum(axis=1) / income.shape[1])
+
     def add(self, result):
         self.data = pd.concat([self.data, 
                         pd.Series(result.data.mean(axis=1), name=f"mean_{self.ntrials}"), 
-                        pd.Series(result.data.std(axis=1), name=f"sd_{self.ntrials}")], 
+                        pd.Series(result.data.std(axis=1), name=f"sd_{self.ntrials}"),
+                        pd.Series(SimResultAggData.gini(result.data), name=f"gini_{self.ntrials}")],
                         axis=1)
         self.ntrials += 1
         if self.keep_trials:
@@ -199,7 +211,7 @@ class SimResultAggData():
         assert(len(pdata.columns) == 4)
         pdata.columns = ['Time','Agg','Trial','Value']
         rplt = sns.relplot(data=pdata, x='Time', y='Value', col='Agg', hue='Trial',
-                    kind='line') \
+                    kind='line', facet_kws={'sharey':False}) \
                 .set_titles(col_template="{col_name}")
         rplt.fig.subplots_adjust(top=0.9)
         rplt.fig.suptitle(self.name)
@@ -228,7 +240,8 @@ class SimResultSweepData():
         tuples = list(zip(param_idx, np.arange(result.data.shape[0])))
         new_idx = pd.MultiIndex.from_tuples(tuples, names=["Param", "Time"])
         result_data = pd.concat([pd.Series(result.data.mean(axis=1), name=f"mean"), 
-                                pd.Series(result.data.std(axis=1), name=f"sd")], 
+                                pd.Series(result.data.std(axis=1), name=f"sd"),
+                                pd.Series(SimResultAggData.gini(result.data), name=f"gini")], 
                                 axis=1)  
         result_data.set_index(new_idx, inplace=True)
         self.data = pd.concat([self.data, result_data], axis=0)
@@ -239,7 +252,7 @@ class SimResultSweepData():
             return
         pdata = self.data.reset_index().melt(id_vars=['Param','Time'],var_name='Agg')
         rplt = sns.relplot(data=pdata, x='Time', y='value', col='Agg', hue='Param',
-                    kind='line') \
+                    kind='line', facet_kws={'sharey':False}) \
                 .set_titles(col_template="{col_name}")
         rplt.fig.subplots_adjust(top=0.9)
         rplt.fig.suptitle(self.name)
@@ -255,3 +268,8 @@ class SimResultSweep():
         self.income.add(result.income, param_val)
         self.neighborhood_size.add(result.neighborhood_size, param_val)
         self.human_capital.add(result.human_capital, param_val)
+
+
+if __name__ == '__main__':
+    sim = Sim()
+    sim.run()
