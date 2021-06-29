@@ -85,8 +85,9 @@ class Sim():
     def __pay_taxes(self, adult_income, adult_neighborhood):
         revenue = np.zeros(self.N_NEIGHBORHOODS)
         for n in range(self.N_NEIGHBORHOODS):
-            taxes = adult_income[adult_neighborhood == n] * self.TAX_RATE
-            adult_income[adult_neighborhood == n] -= taxes
+            taxable = np.logical_and(adult_neighborhood == n, adult_income > 0)
+            taxes = adult_income[taxable] * self.TAX_RATE
+            adult_income[taxable] -= taxes
             revenue[n] = taxes.sum()
         return revenue
 
@@ -158,7 +159,8 @@ class Sim():
 
 class SimResultData():
         def __init__(self, result, name):
-            self.data = result
+            cols = [f"family_{i}" for i in range(result.shape[1])]
+            self.data = pd.DataFrame(result, columns=cols)
             self.name = name
 
         def plot(self):
@@ -182,8 +184,9 @@ class SimResultAggData():
         self.keep_trials = keep_trials
 
     @classmethod
-    def gini(cls, income):
+    def gini(cls, income_df):
         """ income is ordered time x family """
+        income = income_df.to_numpy()
         min_income = income.min(axis=1).reshape((income.shape[0], 1))
         min_income[min_income > 0] = 0
         positive_income = income - min_income
