@@ -13,9 +13,11 @@ class Sim():
         self.N_TIMESTEPS = 100
         self.N_NEIGHBORHOODS = 2
         self.INCOME_GROWTH = 0   # alpha in eq(1)
-        self.INCOME_MOBILITY_COEF = 1  # beta in eq(1)
-        self.INCOME_NOISE_AUTOREG = 1 
-        self.TAX_RATE = .5
+        self.PARENTAL_INVESTMENT_COEF = 0  # beta in eq(1)
+        self.CAPITAL_EFFICIENCY = .1 # phi in eq(4)
+        self.INCOME_NOISE_ADDITIVE = 1 # epsilon in eq(1) 
+        self.INCOME_NOISE_AUTOREG = 1 # epsilon in eq(1)
+        self.TAX_RATE = .1
         self.PREF_CONSUMPTION = .5
         self.PREF_INCOME = 1 - self.PREF_CONSUMPTION
         self.rng = default_rng(seed=12345)
@@ -31,25 +33,38 @@ class Sim():
         # any white noise process will do
         return self.rng.normal(mean, var, size)
 
-    def __generate_income_noise(self, parent_noise=None):
-        """aka epsilon, a MA(1) process.  from eq (1)"""
-        noise = self.__generate_white_noise(self.N_FAMILIES)
-        if parent_noise is not None:
-            noise += self.INCOME_NOISE_AUTOREG * parent_noise
-        return noise
+    def __generate_earned_income(self, child_capital):
+        """ eq (4) """
+        return (self.CAPITAL_EFFICIENCY
+                * child_capital
+                * self.__generate_white_noise(self.N_FAMILIES, mean=1))
         
-    def __generate_mobility(self, parent_income):
-        """ beta in eq(1) and eq(2) """
+    def __inherit_income(self, parent_income):
+        """ pass down money directly to offspring """
         # follows eq(1) for now
-        return np.full(parent_income.shape, self.INCOME_MOBILITY_COEF)
+        return self.PARENTAL_INVESTMENT_COEF * parent_income
+
+    def __inherit_shock(self, parent_noise):
+        """part of epsilon, the MA(1) process from eq (1)"""
+        return self.INCOME_NOISE_AUTOREG * parent_noise
+
+    def __income_shock(self):
+        return self.INCOME_NOISE_ADDITIVE * self.__generate_white_noise(self.N_FAMILIES)
+
+    def __generate_ma_income(self, parent_noise):
+        return self.__inherit_shock(parent_noise) + self.__income_shock()
 
     def __transmit_income(self, parent_income, parent_noise, child_capital):
         """one intergenerational timestep. eq(1) """
-        # TODO: switch to eq(4) but keep individual parental investment as an option
-        mobility = self.__generate_mobility(parent_income)
-        noise = self.__generate_income_noise(parent_noise)
-        offspring_income = self.INCOME_GROWTH + mobility * parent_income + noise
-        return offspring_income, noise
+        income_from_parent = self.__inherit_income(parent_income)
+        earned_income = self.__generate_earned_income(child_capital)
+        ma_noise = self.__generate_ma_income(parent_noise)
+        offspring_income = (self.INCOME_GROWTH + 
+                            income_from_parent +
+                            earned_income +
+                            ma_noise)
+                            
+        return offspring_income, ma_noise
 
     def __initialize_income(self):
         """ create initial income distribution """
@@ -75,21 +90,19 @@ class Sim():
         # this is arbitrary now. should use differential selection
         return child_neighborhood
 
-    def __calculate_taxes(self, adult_income, adult_neighborhood):
-        revenue = np.zeros(self.N_NEIGHBORHOODS)
-        for n in range(self.N_NEIGHBORHOODS):
-            taxes = adult_income[adult_neighborhood == n] * self.TAX_RATE
-            revenue[n] = taxes.sum()
-        return revenue
+    def __compute_taxes(self, adult_income):
+        taxable = adult_income > 0
+        return adult_income * taxable * self.TAX_RATE
+        
+    def __compute_tax_revenue(self, taxes, adult_neighborhood):
+        return [taxes[adult_neighborhood == n].sum() 
+                for n in range(self.N_NEIGHBORHOODS)]
 
     def __pay_taxes(self, adult_income, adult_neighborhood):
-        revenue = np.zeros(self.N_NEIGHBORHOODS)
-        for n in range(self.N_NEIGHBORHOODS):
-            taxable = np.logical_and(adult_neighborhood == n, adult_income > 0)
-            taxes = adult_income[taxable] * self.TAX_RATE
-            adult_income[taxable] -= taxes
-            revenue[n] = taxes.sum()
-        return revenue
+        taxes = self.__compute_taxes(adult_income)
+        income_after_tax = adult_income - taxes
+        taxbase = self.__compute_tax_revenue(taxes, adult_neighborhood)
+        return income_after_tax, taxbase
 
     def __receive_human_capital(self, parent_neighborhood, taxbase):
         hc = np.zeros(self.N_FAMILIES)
@@ -98,18 +111,18 @@ class Sim():
             hc[parent_neighborhood == n] = taxbase[n] / n_size
         return hc
 
-    def __compute_utility(self, adult_consumption, adult_neighborhood, adult_income, income_noise, adult_capital):
+    def __compute_utility(self, adult_income, income_noise, adult_neighborhood):
         """ eq(3) """
-        # expected child income part is pretty arbitrary 
-        return np.full(self.N_FAMILIES, 1)
         # right now assume adults have perfect information about all other
         # adult's neighborhoods and incomes
-        # known_self.rng = default_self.rng(seed=42)
-        # ex_taxbase = calculate_taxes(adult_income, adult_neighborhood)
-        # ex_child_capital = receive_human_capital(adult_neighborhood, ex_taxbase)
-        # ex_child_income = transmit_income(known_self.rng, adult_income, income_noise, x_child_capital)
-        # return self.PREF_CONSUMPTION * np.log(adult_consumption) \
-        #         + PREF_INzCOME * np.log(ex_child_income)
+        known_rng = default_rng.rng(seed=42)
+        ex_taxes = self.__compute_taxes(adult_income)
+        ex_income_after_tax = adult_income - ex_taxes
+        ex_taxbase = self.__compute_tax_revenue(ex_taxes, adult_neighborhood)
+        ex_child_capital = self.__receive_human_capital(adult_neighborhood, ex_taxbase)
+        ex_child_income = self.__transmit_income(known_rng, adult_income, income_noise, ex_child_capital)
+        return self.PREF_CONSUMPTION * np.log(ex_income_after_tax) \
+                + self.PREF_INCOME * np.log(ex_child_income)
 
     def __maximize_utility(self, adult_consumption, adult_neighborhood, adult_income):
         """ eq(3) """
@@ -137,7 +150,7 @@ class Sim():
             income[t, :], income_noise = self.__transmit_income(income[t-1, :], income_noise, human_capital[t-1, :])
             neighborhoods[t, :] = self.__pick_neighborhood(income[t-1, :], neighborhoods[t-1, :])
             neighborhood_size[t, :] = self.__census(neighborhoods[t, :])
-            taxbase = self.__pay_taxes(income[t, :], neighborhoods[t, :])
+            income[t, :], taxbase = self.__pay_taxes(income[t, :], neighborhoods[t, :])
             # Child things
             human_capital[t, :] = self.__receive_human_capital(neighborhoods[t, :], taxbase)
         
@@ -275,4 +288,8 @@ class SimResultSweep():
 
 if __name__ == '__main__':
     sim = Sim()
-    sim.run()
+    sim.set('CAPITAL_EFFICIENCY', 1)
+    sim.set('TAX_RATE', 1)
+    sim.set('INCOME_NOISE_ADDITIVE', 0)
+    sim.set('INCOME_NOISE_AUTOREG', 1)
+    sim.run(14)
