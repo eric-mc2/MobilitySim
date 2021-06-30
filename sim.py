@@ -1,7 +1,6 @@
 from numpy.random import default_rng
 import numpy as np
 import pandas as pd
-import scipy
 import seaborn as sns
 
 
@@ -18,8 +17,8 @@ class Sim():
         self.INCOME_NOISE_ADDITIVE = 1 # epsilon in eq(1) 
         self.INCOME_NOISE_AUTOREG = 1 # epsilon in eq(1)
         self.TAX_RATE = .1
-        self.PREF_CONSUMPTION = .5
-        self.PREF_INCOME = 1 - self.PREF_CONSUMPTION
+        self.UTILITY_CONSUMPTION = .5
+        self.UTILITY_INCOME = (1 - self.UTILITY_CONSUMPTION)
         self.rng = default_rng(seed=12345)
 
     def set(self, param, value):
@@ -104,6 +103,9 @@ class Sim():
         taxbase = self.__compute_tax_revenue(taxes, adult_neighborhood)
         return income_after_tax, taxbase
 
+    def __education_economy(school_size, min, max):
+        return school_size 
+
     def __receive_human_capital(self, parent_neighborhood, taxbase):
         hc = np.zeros(self.N_FAMILIES)
         for n in range(self.N_NEIGHBORHOODS):
@@ -111,18 +113,19 @@ class Sim():
             hc[parent_neighborhood == n] = taxbase[n] / n_size
         return hc
 
-    def __compute_utility(self, adult_income, income_noise, adult_neighborhood):
+    def __compute_utility(self, adult_income, adult_neighborhood, taxbase):
         """ eq(3) """
-        # right now assume adults have perfect information about all other
-        # adult's neighborhoods and incomes
+        # right now assume adults only know their own income and 
+        # each neihborhoods' tax base and population
+        # and the efficiency of human capital
         known_rng = default_rng.rng(seed=42)
-        ex_taxes = self.__compute_taxes(adult_income)
-        ex_income_after_tax = adult_income - ex_taxes
-        ex_taxbase = self.__compute_tax_revenue(ex_taxes, adult_neighborhood)
-        ex_child_capital = self.__receive_human_capital(adult_neighborhood, ex_taxbase)
-        ex_child_income = self.__transmit_income(known_rng, adult_income, income_noise, ex_child_capital)
-        return self.PREF_CONSUMPTION * np.log(ex_income_after_tax) \
-                + self.PREF_INCOME * np.log(ex_child_income)
+        known_noise = np.zeros(self.N_FAMILIES)
+        ex_child_capital = self.__receive_human_capital(adult_neighborhood, taxbase)
+        ex_consumption = (1-self.PARENTAL_INVESTMENT_COEF) * adult_income
+        ex_child_income = (self.PARENTAL_INVESTMENT_COEF * adult_income
+                            + self.CAPITAL_EFFICIENCY * ex_child_capital)
+        return (self.UTILITY_CONSUMPTION * np.log(ex_consumption)
+                + self.UTILITY_INCOME * np.log(ex_child_income))
 
     def __maximize_utility(self, adult_consumption, adult_neighborhood, adult_income):
         """ eq(3) """
@@ -288,8 +291,4 @@ class SimResultSweep():
 
 if __name__ == '__main__':
     sim = Sim()
-    sim.set('CAPITAL_EFFICIENCY', 1)
-    sim.set('TAX_RATE', 1)
-    sim.set('INCOME_NOISE_ADDITIVE', 0)
-    sim.set('INCOME_NOISE_AUTOREG', 1)
-    sim.run(14)
+    sim.run()
