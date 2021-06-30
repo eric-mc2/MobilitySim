@@ -10,7 +10,7 @@ class Sim():
         # Parameters
         self.N_FAMILIES = 50
         self.N_TIMESTEPS = 100
-        self.N_NEIGHBORHOODS = 2
+        self.N_NEIGHBORHOODS = 2 # TODO: make endogeneous
         self.INCOME_GROWTH = 0   # alpha in eq(1)
         self.PARENTAL_INVESTMENT_COEF = 0  # beta in eq(1)
         self.CAPITAL_EFFICIENCY = .1 # phi in eq(4)
@@ -103,18 +103,24 @@ class Sim():
         taxbase = self.__compute_tax_revenue(taxes, adult_neighborhood)
         return income_after_tax, taxbase
 
-    def __education_economy(school_size, min, max):
-        return school_size 
+    def __education_economy(self, school_size):
+        upper = .9 # lambda_2 in eq (8)
+        lower = .1 # lambda_1 in eq (8)
+        scale = 10 / self.N_FAMILIES
+        inflection = self.N_FAMILIES / 2
+        sigmoid = lower + (upper - lower) / (1 + np.exp(-scale*(school_size - inflection)))
+        return sigmoid * school_size
 
     def __receive_human_capital(self, parent_neighborhood, taxbase):
         hc = np.zeros(self.N_FAMILIES)
         for n in range(self.N_NEIGHBORHOODS):
             n_size = (parent_neighborhood == n).sum()
-            hc[parent_neighborhood == n] = taxbase[n] / n_size
+            scaled_size = self.__education_economy(n_size)
+            hc[parent_neighborhood == n] = taxbase[n] / scaled_size
         return hc
 
     def __compute_utility(self, adult_income, adult_neighborhood, taxbase):
-        """ eq(3) """
+        """ eq(3). there's no point in using this yet since we have PARENTAL_INVESTMENT_COEF"""
         # right now assume adults only know their own income and 
         # each neihborhoods' tax base and population
         # and the efficiency of human capital
