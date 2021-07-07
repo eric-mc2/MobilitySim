@@ -13,6 +13,7 @@ class Sim():
         self.N_NEIGHBORHOODS = 2 # TODO: make endogeneous
         self.INCOME_GROWTH = 0   # alpha in eq(1)
         self.PARENTAL_INVESTMENT_COEF = 0  # beta in eq(1)
+        self.PARENTAL_SKILL_COEF = 0  # theta in eq(9)
         self.CAPITAL_EFFICIENCY = .1 # phi in eq(4)
         self.INCOME_NOISE_ADDITIVE = 1 # epsilon in eq(1) 
         self.INCOME_NOISE_AUTOREG = 1 # epsilon in eq(1)
@@ -111,13 +112,30 @@ class Sim():
         sigmoid = lower + (upper - lower) / (1 + np.exp(-scale*(school_size - inflection)))
         return sigmoid * school_size
 
-    def __receive_human_capital(self, parent_neighborhood, taxbase):
-        hc = np.zeros(self.N_FAMILIES)
+    def __form_skills(self, parent_income, parent_neighborhood):
+        """ eq(10). must be increasing and show complementarity """
+        # For now arbitrarily use income * avg(neighborhood_income)
+        skill = np.zeros(self.N_FAMILIES)
+        for n in range(self.N_NEIGHBORHOODS):
+            avg_income = (parent_income[parent_neighborhood == n]).mean()
+            skill[parent_neighborhood == n] = self.PARENTAL_SKILL_COEF * parent_income[parent_neighborhood == n] * avg_income
+        # TODO: actually fix/prevent negative skill due to negative income
+        return np.log(np.maximum(skill, 1))
+
+    def __invest_education(self, parent_neighborhood, taxbase):
+        """ eq(8) """
+        ed = np.zeros(self.N_FAMILIES)
         for n in range(self.N_NEIGHBORHOODS):
             n_size = (parent_neighborhood == n).sum()
             scaled_size = self.__education_economy(n_size)
-            hc[parent_neighborhood == n] = taxbase[n] / scaled_size
-        return hc
+            ed[parent_neighborhood == n] = taxbase[n] / scaled_size
+        return ed
+
+    def __receive_human_capital(self, parent_income, parent_neighborhood, taxbase):
+        """ eq(9)"""
+        ed = self.__invest_education(parent_neighborhood, taxbase)
+        skill = self.__form_skills(parent_income, parent_neighborhood)
+        return ed * skill
 
     def __compute_utility(self, adult_income, adult_neighborhood, taxbase):
         """ eq(3). there's no point in using this yet since we have PARENTAL_INVESTMENT_COEF"""
@@ -126,7 +144,7 @@ class Sim():
         # and the efficiency of human capital
         known_rng = default_rng.rng(seed=42)
         known_noise = np.zeros(self.N_FAMILIES)
-        ex_child_capital = self.__receive_human_capital(adult_neighborhood, taxbase)
+        ex_child_capital = self.__receive_human_capital(adult_income, adult_neighborhood, taxbase)
         ex_consumption = (1-self.PARENTAL_INVESTMENT_COEF) * adult_income
         ex_child_income = (self.PARENTAL_INVESTMENT_COEF * adult_income
                             + self.CAPITAL_EFFICIENCY * ex_child_capital)
@@ -161,7 +179,7 @@ class Sim():
             neighborhood_size[t, :] = self.__census(neighborhoods[t, :])
             income[t, :], taxbase = self.__pay_taxes(income[t, :], neighborhoods[t, :])
             # Child things
-            human_capital[t, :] = self.__receive_human_capital(neighborhoods[t, :], taxbase)
+            human_capital[t, :] = self.__receive_human_capital(income[t, :], neighborhoods[t, :], taxbase)
         
         return SimResult(income, neighborhoods, neighborhood_size, human_capital)
 
