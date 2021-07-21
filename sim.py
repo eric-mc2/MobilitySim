@@ -1,3 +1,8 @@
+# Author: Eric Chandler <echandler@uchicago.edu>
+# Brief: A simulation of intergenerational mobility
+# Description: Modeled after the Durlauf-Seshadri paper "Understanding the
+#   Great Gatsby Curve"
+
 from numpy.random import default_rng
 import numpy as np
 import pandas as pd
@@ -13,13 +18,14 @@ class Sim():
         self.N_NEIGHBORHOODS = 2 # TODO: make endogeneous
         self.INCOME_GROWTH = 0   # alpha in eq(1)
         self.PARENTAL_INVESTMENT_COEF = 0  # beta in eq(1)
-        self.PARENTAL_SKILL_COEF = 0  # theta in eq(9)
-        self.CAPITAL_EFFICIENCY = .1 # phi in eq(4)
-        self.INCOME_NOISE_ADDITIVE = 1 # epsilon in eq(1) 
-        self.INCOME_NOISE_AUTOREG = 1 # epsilon in eq(1)
-        self.TAX_RATE = .1
-        self.UTILITY_CONSUMPTION = .5
-        self.UTILITY_INCOME = (1 - self.UTILITY_CONSUMPTION)
+        self.SKILL_FROM_PARENT_INCOME = 0  # theta in eq(9)
+        self.SKILL_FROM_NEIGHBOR_INCOME = 0  # theta in eq(9)
+        self.CAPITAL_EFFICIENCY = 0 # phi in eq(4)
+        self.INCOME_NOISE_ADDITIVE = 0 # epsilon in eq(1) 
+        self.INCOME_NOISE_AUTOREG = 0 # epsilon in eq(1)
+        self.TAX_RATE = 0
+        # self.UTILITY_CONSUMPTION = .5
+        # self.UTILITY_INCOME = (1 - self.UTILITY_CONSUMPTION)
         self.rng = default_rng(seed=12345)
 
     def set(self, param, value):
@@ -33,7 +39,7 @@ class Sim():
         # any white noise process will do
         return self.rng.normal(mean, var, size)
 
-    def __generate_earned_income(self, child_capital):
+    def __earn_income(self, child_capital):
         """ eq (4) """
         return (self.CAPITAL_EFFICIENCY
                 * child_capital
@@ -49,22 +55,22 @@ class Sim():
         return self.INCOME_NOISE_AUTOREG * parent_noise
 
     def __income_shock(self):
+        """part of epsilon, the MA(1) process from eq (1)"""
         return self.INCOME_NOISE_ADDITIVE * self.__generate_white_noise(self.N_FAMILIES)
 
-    def __generate_ma_income(self, parent_noise):
-        return self.__inherit_shock(parent_noise) + self.__income_shock()
-
-    def __transmit_income(self, parent_income, parent_noise, child_capital):
+    def __receive_income(self, parent_income, parent_noise, child_capital):
         """one intergenerational timestep. eq(1) """
         income_from_parent = self.__inherit_income(parent_income)
-        earned_income = self.__generate_earned_income(child_capital)
-        ma_noise = self.__generate_ma_income(parent_noise)
+        earned_income = self.__earn_income(child_capital)
+        income_shock = self.__income_shock()
+        inherited_shock = self.__inherit_shock(parent_noise)
         offspring_income = (self.INCOME_GROWTH + 
                             income_from_parent +
                             earned_income +
-                            ma_noise)
+                            income_shock + 
+                            inherited_shock)
                             
-        return offspring_income, ma_noise
+        return offspring_income, (income_shock + inherited_shock)
 
     def __initialize_income(self):
         """ create initial income distribution """
@@ -92,7 +98,7 @@ class Sim():
 
     def __compute_taxes(self, adult_income):
         taxable = adult_income > 0
-        return adult_income * taxable * self.TAX_RATE
+        return np.where(taxable, adult_income, 0) * self.TAX_RATE
         
     def __compute_tax_revenue(self, taxes, adult_neighborhood):
         return [taxes[adult_neighborhood == n].sum() 
@@ -104,7 +110,7 @@ class Sim():
         taxbase = self.__compute_tax_revenue(taxes, adult_neighborhood)
         return income_after_tax, taxbase
 
-    def __education_economy(self, school_size):
+    def __compute_edu_efficiency(self, school_size):
         upper = .9 # lambda_2 in eq (8)
         lower = .1 # lambda_1 in eq (8)
         scale = 10 / self.N_FAMILIES
@@ -112,48 +118,53 @@ class Sim():
         sigmoid = lower + (upper - lower) / (1 + np.exp(-scale*(school_size - inflection)))
         return sigmoid * school_size
 
-    def __form_skills(self, parent_income, parent_neighborhood):
-        """ eq(10). must be increasing and show complementarity """
-        # For now arbitrarily use income * avg(neighborhood_income)
-        skill = np.zeros(self.N_FAMILIES)
-        for n in range(self.N_NEIGHBORHOODS):
-            avg_income = (parent_income[parent_neighborhood == n]).mean()
-            skill[parent_neighborhood == n] = self.PARENTAL_SKILL_COEF * parent_income[parent_neighborhood == n] * avg_income
-        # TODO: actually fix/prevent negative skill due to negative income
-        return np.log(np.maximum(skill, 1))
-
     def __invest_education(self, parent_neighborhood, taxbase):
         """ eq(8) """
         ed = np.zeros(self.N_FAMILIES)
         for n in range(self.N_NEIGHBORHOODS):
             n_size = (parent_neighborhood == n).sum()
-            scaled_size = self.__education_economy(n_size)
-            ed[parent_neighborhood == n] = taxbase[n] / scaled_size
+            econ_of_scale = self.__compute_edu_efficiency(n_size)
+            ed[parent_neighborhood == n] = taxbase[n] / econ_of_scale
         return ed
 
-    def __receive_human_capital(self, parent_income, parent_neighborhood, taxbase):
-        """ eq(9)"""
+    def __form_skills(self, parent_income, parent_neighborhood):
+        """ eq(10). must be increasing and show complementarity """
+        # For now arbitrarily use income * avg(neighborhood_income)
+        skill = np.zeros(self.N_FAMILIES)
+        for n in range(self.N_NEIGHBORHOODS):
+            # bound below by 0 so we dont get negative skill
+            # TODO: actually fix/prevent negative skill due to negative income
+            par_income = np.maximum(0, parent_income[parent_neighborhood == n])
+            avg_income = par_income.mean()
+            skill[parent_neighborhood == n] = np.power(par_income, self.SKILL_FROM_PARENT_INCOME) * \
+                                              np.power(avg_income, self.SKILL_FROM_NEIGHBOR_INCOME)
+        return skill
+
+    def __develop_human_capital(self, parent_income, parent_neighborhood, taxbase):
+        """ eq(9) """
         ed = self.__invest_education(parent_neighborhood, taxbase)
         skill = self.__form_skills(parent_income, parent_neighborhood)
-        return ed * skill
+        # XXX: this multiplication is specified in the model but i dont like
+        #       how you need edu (ie. taxes) to get hc from skill
+        return skill * ed
 
-    def __compute_utility(self, adult_income, adult_neighborhood, taxbase):
-        """ eq(3). there's no point in using this yet since we have PARENTAL_INVESTMENT_COEF"""
-        # right now assume adults only know their own income and 
-        # each neihborhoods' tax base and population
-        # and the efficiency of human capital
-        known_rng = default_rng.rng(seed=42)
-        known_noise = np.zeros(self.N_FAMILIES)
-        ex_child_capital = self.__receive_human_capital(adult_income, adult_neighborhood, taxbase)
-        ex_consumption = (1-self.PARENTAL_INVESTMENT_COEF) * adult_income
-        ex_child_income = (self.PARENTAL_INVESTMENT_COEF * adult_income
-                            + self.CAPITAL_EFFICIENCY * ex_child_capital)
-        return (self.UTILITY_CONSUMPTION * np.log(ex_consumption)
-                + self.UTILITY_INCOME * np.log(ex_child_income))
+    # def __compute_utility(self, adult_income, adult_neighborhood, taxbase):
+    #     """ eq(3). there's no point in using this yet since we have PARENTAL_INVESTMENT_COEF"""
+    #     # right now assume adults only know their own income and 
+    #     # each neihborhoods' tax base and population
+    #     # and the efficiency of human capital
+    #     known_rng = default_rng.rng(seed=42)
+    #     known_noise = np.zeros(self.N_FAMILIES)
+    #     ex_child_capital = self.__develop_human_capital(adult_income, adult_neighborhood, taxbase)
+    #     ex_consumption = (1-self.PARENTAL_INVESTMENT_COEF) * adult_income
+    #     ex_child_income = (self.PARENTAL_INVESTMENT_COEF * adult_income
+    #                         + self.CAPITAL_EFFICIENCY * ex_child_capital)
+    #     return (self.UTILITY_CONSUMPTION * np.log(ex_consumption)
+    #             + self.UTILITY_INCOME * np.log(ex_child_income))
 
-    def __maximize_utility(self, adult_consumption, adult_neighborhood, adult_income):
-        """ eq(3) """
-        pass
+    # def __maximize_utility(self, adult_consumption, adult_neighborhood, adult_income):
+    #     """ eq(3) """
+    #     pass
 
     def __census(self, adult_neighborhood):
         n_size = np.zeros(self.N_NEIGHBORHOODS)
@@ -174,12 +185,12 @@ class Sim():
 
         for t in range(1, self.N_TIMESTEPS):
             # Adult things
-            income[t, :], income_noise = self.__transmit_income(income[t-1, :], income_noise, human_capital[t-1, :])
+            income[t, :], income_noise = self.__receive_income(income[t-1, :], income_noise, human_capital[t-1, :])
             neighborhoods[t, :] = self.__pick_neighborhood(income[t-1, :], neighborhoods[t-1, :])
             neighborhood_size[t, :] = self.__census(neighborhoods[t, :])
             income[t, :], taxbase = self.__pay_taxes(income[t, :], neighborhoods[t, :])
             # Child things
-            human_capital[t, :] = self.__receive_human_capital(income[t, :], neighborhoods[t, :], taxbase)
+            human_capital[t, :] = self.__develop_human_capital(income[t, :], neighborhoods[t, :], taxbase)
         
         return SimResult(income, neighborhoods, neighborhood_size, human_capital)
 
@@ -229,16 +240,20 @@ class SimResultAggData():
         income = income_df.to_numpy()
         min_income = income.min(axis=1).reshape((income.shape[0], 1))
         min_income[min_income > 0] = 0
-        positive_income = income - min_income
+        positive_income = income - min_income # boost everyone's income in case of negative income
         total_income = positive_income.sum(axis=1).reshape((income.shape[0], 1))
-        lorenz = np.sort(positive_income, axis=1).cumsum(axis=1) / total_income
-        return .5 - (lorenz.sum(axis=1) / income.shape[1])
+        _lorenz = np.sort(positive_income, axis=1).cumsum(axis=1)
+        lorenz = np.true_divide(_lorenz, total_income, out=np.zeros_like(_lorenz), where=total_income>0)
+        return .5 - lorenz.mean(axis=1) # unit triangle - integral of lorenz
 
     def add(self, result):
         self.data = pd.concat([self.data, 
                         pd.Series(result.data.mean(axis=1), name=f"mean_{self.ntrials}"), 
-                        pd.Series(result.data.std(axis=1), name=f"sd_{self.ntrials}"),
-                        pd.Series(SimResultAggData.gini(result.data), name=f"gini_{self.ntrials}")],
+                        pd.Series(result.data.std(axis=1), name=f"sd_{self.ntrials}")],
+                        axis=1)
+        if self.name in ["Income", "Capital"]:
+            self.data = pd.concat([self.data, 
+                            pd.Series(SimResultAggData.gini(result.data), name=f"gini_{self.ntrials}")],
                         axis=1)
         self.ntrials += 1
         if self.keep_trials:
@@ -283,9 +298,12 @@ class SimResultSweepData():
         tuples = list(zip(param_idx, np.arange(result.data.shape[0])))
         new_idx = pd.MultiIndex.from_tuples(tuples, names=["Param", "Time"])
         result_data = pd.concat([pd.Series(result.data.mean(axis=1), name=f"mean"), 
-                                pd.Series(result.data.std(axis=1), name=f"sd"),
-                                pd.Series(SimResultAggData.gini(result.data), name=f"gini")], 
+                                pd.Series(result.data.std(axis=1), name=f"sd")],
                                 axis=1)  
+        if self.name in ["Income", "Capital"]:
+            result_data = pd.concat([result_data,
+                            pd.Series(SimResultAggData.gini(result.data), name=f"gini")],
+                            axis=1)
         result_data.set_index(new_idx, inplace=True)
         self.data = pd.concat([self.data, result_data], axis=0)
     
