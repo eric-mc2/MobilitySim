@@ -7,7 +7,7 @@ from numpy.random import default_rng
 import numpy as np
 import pandas as pd
 import seaborn as sns
-
+import warnings
 
 class Sim():
 
@@ -41,9 +41,14 @@ class Sim():
 
     def __earn_income(self, child_capital):
         """ eq (4) """
-        return (self.CAPITAL_EFFICIENCY
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("error")
+            prod = (self.CAPITAL_EFFICIENCY
                 * child_capital
                 * self.__generate_white_noise(self.N_FAMILIES, mean=1))
+            if len(w):
+                print('somethign bad')
+        return prod
         
     def __inherit_income(self, parent_income):
         """ pass down money directly to offspring """
@@ -106,7 +111,11 @@ class Sim():
 
     def __pay_taxes(self, adult_income, adult_neighborhood):
         taxes = self.__compute_taxes(adult_income)
-        income_after_tax = adult_income - taxes
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("error")
+            income_after_tax = adult_income - taxes
+            if len(w):
+                print('somethign bad')
         taxbase = self.__compute_tax_revenue(taxes, adult_neighborhood)
         return income_after_tax, taxbase
 
@@ -135,7 +144,8 @@ class Sim():
             # bound below by 0 so we dont get negative skill
             # TODO: actually fix/prevent negative skill due to negative income
             par_income = np.maximum(0, parent_income[parent_neighborhood == n])
-            avg_income = par_income.mean()
+            # eq (10) excludes parent income from avg
+            avg_income = (par_income.sum() - par_income) / (par_income.size - 1)
             skill[parent_neighborhood == n] = np.power(par_income, self.SKILL_FROM_PARENT_INCOME) * \
                                               np.power(avg_income, self.SKILL_FROM_NEIGHBOR_INCOME)
         return skill
@@ -146,7 +156,12 @@ class Sim():
         skill = self.__form_skills(parent_income, parent_neighborhood)
         # XXX: this multiplication is specified in the model but i dont like
         #       how you need edu (ie. taxes) to get hc from skill
-        return skill * ed
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("error")
+            prod = skill * ed
+            if len(w):
+                print('somethign bad')
+        return prod
 
     # def __compute_utility(self, adult_income, adult_neighborhood, taxbase):
     #     """ eq(3). there's no point in using this yet since we have PARENTAL_INVESTMENT_COEF"""
