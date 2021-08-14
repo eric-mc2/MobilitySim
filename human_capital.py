@@ -1,44 +1,53 @@
 # Author: Eric Chandler <echandler@uchicago.edu>
 # Brief: Intergenerational human capital transition mechanism
 
+from mechanism import SimMech
+from income import Income
+from neighborhood import Neighborhood
 import numpy as np
+from numpy import ndarray
 import warnings
+from config import Config, Globals
 
-class HumanCapital():
-    def __init__(self, config):
-        self.config = config
+class HumanCapital(SimMech):
+    def __init__(self, config: Config, globals: Globals):
+        super().__init__(config, globals)
+        self.capital = np.zeros((config.N_TIMESTEPS, config.N_FAMILIES))
+
         
     def initialize_human_capital(self):
         """ create initial human capital distribution """
         # this is arbitrary right now
-        hc = np.full(self.config.N_FAMILIES, 1)
-        return hc
+        self.capital[0, :] = np.full(self.config.N_FAMILIES, 1)
 
 
-    def _compute_edu_efficiency(self, school_size):
+    def _compute_edu_efficiency(self, pop: int):
         upper = .9 # lambda_2 in eq (8)
         lower = .1 # lambda_1 in eq (8)
         scale = 10 / self.config.N_FAMILIES
         inflection = self.config.N_FAMILIES / 2
-        sigmoid = lower + (upper - lower) / (1 + np.exp(-scale*(school_size - inflection)))
-        return sigmoid * school_size
+        sigmoid = lower + (upper - lower) / (1 + np.exp(-scale*(pop - inflection)))
+        return sigmoid * pop
 
     
-    def _invest_education(self, parent_neighborhood, taxbase):
+    def _invest_education(self, neighborhoods: Neighborhood, taxbase: ndarray):
         """ eq(8) """
-        ed = np.zeros(self.config.N_FAMILIES)
-        for n in range(self.config.N_NEIGHBORHOODS):
-            n_size = (parent_neighborhood == n).sum()
-            econ_of_scale = self._compute_edu_efficiency(n_size)
-            ed[parent_neighborhood == n] = taxbase[n] / econ_of_scale
-        return ed
+        investment = np.zeros(self.config.N_FAMILIES)
+        parent_neighborhood = neighborhoods[self.globals.t, :]
+        for n in range(neighborhoods.count):
+            pop = neighborhoods.pop[self.globals.t, n]
+            econ_of_scale = self._compute_edu_efficiency(pop)
+            investment[parent_neighborhood == n] = taxbase[n] / econ_of_scale
+        return investment
 
 
-    def _form_skills(self, parent_income, parent_neighborhood):
+    def _form_skills(self, income: Income, neighborhoods: Neighborhood):
         """ eq(10). must be increasing and show complementarity """
         # For now arbitrarily use income * avg(neighborhood_income)
         skill = np.zeros(self.config.N_FAMILIES)
-        for n in range(self.config.N_NEIGHBORHOODS):
+        parent_income = income.income[self.globals.t, :]
+        parent_neighborhood = neighborhoods.hood[self.globals.t, :]
+        for n in range(neighborhoods.count):
             # bound below by 1 so we dont get negative skill
             # TODO: actually fix/prevent negative skill due to low income
             par_income = np.maximum(1, parent_income[parent_neighborhood == n])
@@ -49,15 +58,19 @@ class HumanCapital():
         return skill
 
 
-    def develop_human_capital(self, parent_income, parent_neighborhood, taxbase):
-        """ eq(9) """
-        ed = self._invest_education(parent_neighborhood, taxbase)
-        skill = self._form_skills(parent_income, parent_neighborhood)
+    def develop_human_capital(self, income: Income, neighborhoods: Neighborhood, taxbase: ndarray):
+        """ 
+            implements eq(9) 
+            note: human capital develops in a child's context, therefore:
+                income[t] == parents, neighborhood[t] == parents
+        """
+        ed = self._invest_education(neighborhoods, taxbase)
+        skill = self._form_skills(income, neighborhoods)
         # XXX: this multiplication is specified in the model but i dont like
         #       how you need edu (ie. taxes) to get hc from skill
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("error")
             prod = skill * ed
             if len(w):
-                print('somethign bad')
+                self.globals.logger.critical('numerical instability!')
         return prod

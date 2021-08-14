@@ -1,12 +1,15 @@
 # Author: Eric Chandler <echandler@uchicago.edu>
 # Brief: Data structure for simulation results
 
+from pandas.core.frame import DataFrame
+from mechanism import SimMech
+from sim import Sim
 import numpy as np
 import pandas as pd
 import seaborn as sns
 
 class SimResultData():
-        def __init__(self, result, name):
+        def __init__(self, result: SimMech, name: str):
             cols = [f"family_{i}" for i in range(result.shape[1])]
             self.data = pd.DataFrame(result, columns=cols)
             self.name = name
@@ -16,15 +19,15 @@ class SimResultData():
     
 
 class SimResult():
-    def __init__(self, income, neighborhoods, neighborhood_size, human_capital):
-        self.income = SimResultData(income, "Income")
-        self.neighborhood = SimResultData(neighborhoods, "Neighborhoods")
-        self.neighborhood_size = SimResultData(neighborhood_size, "Neighborhood Size")
-        self.human_capital = SimResultData(human_capital, "Capital")
+    def __init__(self, sim: Sim):
+        self.income = SimResultData(sim.income, "Income")
+        self.neighborhood = SimResultData(sim.neighborhood.hood, "Neighborhoods")
+        self.neighborhood_size = SimResultData(sim.neighborhood.pop, "Neighborhood Size")
+        self.human_capital = SimResultData(sim.human_capital, "Capital")
 
 
 class SimResultAggData():
-    def __init__(self, name, keep_trials=False):
+    def __init__(self, name: str, keep_trials=False):
         self.data = pd.DataFrame()
         self.name = name
         self.ntrials = 0
@@ -32,7 +35,7 @@ class SimResultAggData():
         self.keep_trials = keep_trials
 
     @classmethod
-    def gini(cls, income_df):
+    def gini(cls, income_df: DataFrame):
         """ income is ordered time x family """
         income = income_df.to_numpy()
         min_income = income.min(axis=1).reshape((income.shape[0], 1))
@@ -43,7 +46,7 @@ class SimResultAggData():
         lorenz = np.true_divide(_lorenz, total_income, out=np.zeros_like(_lorenz), where=total_income>0)
         return .5 - lorenz.mean(axis=1) # unit triangle - integral of lorenz
 
-    def add(self, result):
+    def add(self, result: SimResultData):
         self.data = pd.concat([self.data, 
                         pd.Series(result.data.mean(axis=1), name=f"mean_{self.ntrials}"), 
                         pd.Series(result.data.std(axis=1), name=f"sd_{self.ntrials}")],
@@ -79,18 +82,18 @@ class SimResultAgg():
         self.neighborhood_size = SimResultAggData("Neighborhood Size", keep_trials)
         self.human_capital = SimResultAggData("Capital", keep_trials)
     
-    def add(self, result):
+    def add(self, result: SimResult):
         self.income.add(result.income)
         self.neighborhood_size.add(result.neighborhood_size)
         self.human_capital.add(result.human_capital)
 
 
 class SimResultSweepData():
-    def __init__(self, name):
+    def __init__(self, name: str):
         self.data = pd.DataFrame()
         self.name = name
 
-    def add(self, result, param_val):
+    def add(self, result: SimResultAggData, param_val: float):
         param_idx = pd.Index([param_val]).repeat(result.data.shape[0])
         tuples = list(zip(param_idx, np.arange(result.data.shape[0])))
         new_idx = pd.MultiIndex.from_tuples(tuples, names=["Param", "Time"])
@@ -122,7 +125,7 @@ class SimResultSweep():
         self.neighborhood_size = SimResultSweepData("Neighborhood Size")
         self.human_capital = SimResultSweepData("Capital")
     
-    def add(self, result, param_val):
+    def add(self, result: SimResultAgg, param_val: float):
         self.income.add(result.income, param_val)
         self.neighborhood_size.add(result.neighborhood_size, param_val)
         self.human_capital.add(result.human_capital, param_val)
