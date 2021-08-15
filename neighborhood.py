@@ -1,34 +1,35 @@
 # Author: Eric Chandler <echandler@uchicago.edu>
 # Brief: Neighborhood mechanism
 
+from abc import ABC, abstractmethod
 from config import Config, Globals
 from mechanism import SimMech
 import numpy as np
 from numpy import ndarray
 import warnings
-from enum import Enum, auto
 from income import Income
 
-class Formation(Enum):
-    STATIC = auto()
-    PERFECT_SORTING_PAIRS = auto()
-    PERFECT_SORTING = auto()
 
-class Neighborhood(SimMech):
+class Neighborhood(ABC, SimMech):
     def __init__(self, config: Config, globals: Globals):
         super().__init__(config, globals)
-        self.hood = np.zeros((config.N_TIMESTEPS, config.N_FAMILIES))
-        self.pop = np.zeros((config.N_TIMESTEPS, config.N_FAMILIES))
+        self.hood = np.zeros((config.N_TIMESTEPS, config.N_FAMILIES), dtype=np.int32)
+        self.pop = np.zeros((config.N_TIMESTEPS, config.N_FAMILIES), dtype=np.int32)
         self.count = 0
 
 
     def _census(self):
         pop = np.bincount(self.hood[self.globals.t, :])
         ragged_len = self.config.N_FAMILIES - pop.size
-        padded_pop = np.pad(pop, (0, ragged_len), constant_value=0)
+        padded_pop = np.pad(pop, (0, ragged_len), constant_values=0)
         self.pop[self.globals.t, :] = padded_pop
         self.count = pop.size
 
+
+    @abstractmethod
+    def pick_neighborhood(self, income):
+        """ select into neighborhoods """
+    
 
     def initialize_neighborhoods(self):
         """ create initial neighborhood selection """

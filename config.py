@@ -3,6 +3,8 @@
 
 from numpy.random import default_rng
 from logging import Logger
+from enum import Enum, auto
+
 
 class Config():
     def __init__(self):
@@ -16,6 +18,7 @@ class Config():
         self.INCOME_NOISE_ADDITIVE = 0 # epsilon in eq(1) 
         self.INCOME_NOISE_AUTOREG = 0 # epsilon in eq(1)
         self.TAX_RATE = 0
+        self.HOOD_FORMATION = HoodFormation.STATIC
         # self.UTILITY_CONSUMPTION = .5
         # self.UTILITY_INCOME = (1 - self.UTILITY_CONSUMPTION)
 
@@ -25,9 +28,16 @@ class Config():
         else:
             print(f"Error: Invalid parameter {param}")
 
+
+class HoodFormation(Enum):
+    STATIC = auto()
+    PERFECT_SORTING_PAIRS = auto()
+    PERFECT_SORTING = auto()
+
+
 class Globals():
     def __init__(self):
         self.n_neighborhoods = 0
         self.t = 0
         self.rng = default_rng(seed=12345)
-        self.logger = Logger()
+        self.logger = Logger('Sim')

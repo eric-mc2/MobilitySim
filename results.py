@@ -3,8 +3,8 @@
 
 from pandas.core.frame import DataFrame
 from mechanism import SimMech
-from sim import Sim
 import numpy as np
+from numpy import ndarray
 import pandas as pd
 import seaborn as sns
 
@@ -19,11 +19,12 @@ class SimResultData():
     
 
 class SimResult():
-    def __init__(self, sim: Sim):
-        self.income = SimResultData(sim.income, "Income")
-        self.neighborhood = SimResultData(sim.neighborhood.hood, "Neighborhoods")
-        self.neighborhood_size = SimResultData(sim.neighborhood.pop, "Neighborhood Size")
-        self.human_capital = SimResultData(sim.human_capital, "Capital")
+    def __init__(self, income: ndarray, neighborhood: ndarray, 
+        population: ndarray, human_capital: ndarray):
+        self.income = SimResultData(income, "Income")
+        self.neighborhood = SimResultData(neighborhood, "Neighborhoods")
+        self.neighborhood_size = SimResultData(population, "Neighborhood Size")
+        self.human_capital = SimResultData(human_capital, "Capital")
 
 
 class SimResultAggData():

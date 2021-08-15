@@ -33,7 +33,7 @@ class HumanCapital(SimMech):
     def _invest_education(self, neighborhoods: Neighborhood, taxbase: ndarray):
         """ eq(8) """
         investment = np.zeros(self.config.N_FAMILIES)
-        parent_neighborhood = neighborhoods[self.globals.t, :]
+        parent_neighborhood = neighborhoods.hood[self.globals.t, :]
         for n in range(neighborhoods.count):
             pop = neighborhoods.pop[self.globals.t, n]
             econ_of_scale = self._compute_edu_efficiency(pop)
@@ -56,6 +56,19 @@ class HumanCapital(SimMech):
             skill[parent_neighborhood == n] = np.log(par_income) * self.config.SKILL_FROM_PARENT_INCOME + \
                                               np.log(avg_income) * self.config.SKILL_FROM_NEIGHBOR_INCOME
         return skill
+
+
+    def earn_income(self):
+        """ eq (4) """
+        capital_as_child = self.capital[self.globals.t-1, :]
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("error")
+            prod = (self.config.CAPITAL_EFFICIENCY
+                * capital_as_child
+                * self.generate_white_noise(self.config.N_FAMILIES, mean=1))
+            if len(w):
+                self.globals.logger.critical('numerical instability')
+        return prod
 
 
     def develop_human_capital(self, income: Income, neighborhoods: Neighborhood, taxbase: ndarray):
