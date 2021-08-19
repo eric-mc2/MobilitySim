@@ -6,7 +6,6 @@ from config import Config, Globals
 from mechanism import SimMech
 import numpy as np
 from numpy import ndarray
-import warnings
 from income import Income
 
 
@@ -15,13 +14,19 @@ class Neighborhood(ABC, SimMech):
         super().__init__(config, globals)
         self.hood = np.zeros((config.N_TIMESTEPS, config.N_FAMILIES), dtype=np.int32)
         self.pop = np.zeros((config.N_TIMESTEPS, config.N_FAMILIES), dtype=np.int32)
+        equilib = config.UTILITY_CONSUMPTION / (config.UTILITY_CONSUMPTION + self.config.UTILITY_CHILD_INCOME)
+        self.taxrate_pref = np.repeat(equilib, config.N_FAMILIES)
         self.count = 0
 
+    @classmethod
+    def _pad_right(cls, arr, length):
+        end_length = length - arr.size
+        margins = (0, end_length)
+        return np.pad(arr, margins, constant_values=0)
 
     def _census(self):
         pop = np.bincount(self.hood[self.globals.t, :])
-        ragged_len = self.config.N_FAMILIES - pop.size
-        padded_pop = np.pad(pop, (0, ragged_len), constant_values=0)
+        padded_pop = Neighborhood._pad_right(pop, self.config.N_FAMILIES) 
         self.pop[self.globals.t, :] = padded_pop
         self.count = pop.size
 
@@ -29,7 +34,7 @@ class Neighborhood(ABC, SimMech):
     @abstractmethod
     def pick_neighborhood(self, income):
         """ select into neighborhoods """
-    
+        pass    
 
     def initialize_neighborhoods(self):
         """ create initial neighborhood selection """
@@ -50,16 +55,12 @@ class Neighborhood(ABC, SimMech):
         return [taxes[adult_neighborhood == n].sum() for n in range(self.count)]
 
 
-    def pay_taxes(self, income: Income):
+    def collect_taxes(self, income: Income):
         adult_income = income.income[self.globals.t, :]
         taxes = self._compute_taxes(adult_income)
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("error")
-            income_after_tax = adult_income - taxes
-            if len(w):
-                print('somethign bad')
+        income_after_tax = adult_income - taxes
         taxbase = self._compute_tax_revenue(taxes)
-        income.income[self.globals.t] = income_after_tax
+        income.income[self.globals.t, :] = income_after_tax
         return taxbase
 
         
@@ -76,12 +77,14 @@ class SortedPairsNeighborhood(Neighborhood):
         self.hood[self.globals.t, :] = sorting // 2
         self._census()
 
-class SortedNeighborhood(SortedPairsNeighborhood):
+class SortedNeighborhood(Neighborhood):
     def pick_neighborhood(self, income):
         """ select into neighborhoods """
         joining = {}
         sorting = np.argsort(income.income[self.globals.t, :])
         for i in range(len(sorting)):
             for j in range(i+1, len(sorting)):
+                # start from highest income person. add next income person if
+                # they contribute positively to marginal income.
                 pass
         self._census()

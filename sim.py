@@ -32,17 +32,20 @@ class Sim():
 
     def _run_trial(self) -> SimResult:
         self.globals.t = 0
+        # Initialize an adult generation
         self.income.initialize_income()
         self.capital.initialize_human_capital()
         self.neighborhood.initialize_neighborhoods()
+        # Simulate the first child generation
+        taxbase = self.neighborhood.collect_taxes(self.income)
+        self.capital.develop_human_capital(self.income, self.neighborhood, taxbase)
         
         for t in range(1, self.config.N_TIMESTEPS):
             self.globals.t = t
             # Adult things
-            self.income.inherit_income()
-            self.income.earn_income(self.capital.earn_income())
+            self.income.gain_income(self.capital.earn_income())
             self.neighborhood.pick_neighborhood(self.income)
-            taxbase = self.neighborhood.pay_taxes(self.income)
+            taxbase = self.neighborhood.collect_taxes(self.income)
             # Child things
             self.capital.develop_human_capital(self.income, self.neighborhood, taxbase)
         

@@ -26,25 +26,22 @@ class Income(SimMech):
 
     def _income_shock(self):
         """part of epsilon, the MA(1) process from eq (1)"""
-        return self.config.INCOME_NOISE_ADDITIVE * self.generate_white_noise(self.config.N_FAMILIES)
+        # in proposition 6, page 19, the authors limit epsilon > 0
+        return self.config.INCOME_NOISE_ADDITIVE * self.generate_positive_shock(self.config.N_FAMILIES)
 
 
-    def inherit_income(self):
+    def gain_income(self, earned_income: ndarray):
         """one intergenerational timestep. eq(1) """
         income_from_parent = self._inherit_income()
+        income_shock = self._income_shock()
         inherited_shock = self._inherit_income_shock()
         offspring_income = (self.config.INCOME_GROWTH + 
                             income_from_parent +
+                            earned_income + 
+                            income_shock + 
                             inherited_shock) 
-        self.globals.logger.debug(f'income shape: {self.income.shape}')
-        self.globals.logger.debug(f'offspring shape: {offspring_income.shape}')
-        self.income[self.globals.t, :] += offspring_income
-        self.noise += inherited_shock
-
-
-    def earn_income(self, earned_income: ndarray):
-        self.income[self.globals.t, :] += earned_income
-        self.noise += self._income_shock()
+        self.income[self.globals.t, :] = offspring_income
+        self.noise = income_shock + inherited_shock
 
 
     def initialize_income(self):

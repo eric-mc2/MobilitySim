@@ -51,7 +51,7 @@ class HumanCapital(SimMech):
             # bound below by 1 so we dont get negative skill
             # TODO: actually fix/prevent negative skill due to low income
             par_income = np.maximum(1, parent_income[parent_neighborhood == n])
-            # exclude parent income from avg <- eq (10) 
+            # eq (10): exclude parent income from avg 
             avg_income = (par_income.sum() - par_income) / (par_income.size - 1)
             skill[parent_neighborhood == n] = np.log(par_income) * self.config.SKILL_FROM_PARENT_INCOME + \
                                               np.log(avg_income) * self.config.SKILL_FROM_NEIGHBOR_INCOME
