@@ -19,8 +19,8 @@ class Config():
         self.INCOME_NOISE_AUTOREG = 0 # epsilon in eq(1)
         self.TAX_RATE = 0
         self.HOOD_FORMATION = HoodFormation.STATIC
-        # self.UTILITY_CONSUMPTION = .5
-        # self.UTILITY_INCOME = (1 - self.UTILITY_CONSUMPTION)
+        self.UTILITY_CONSUMPTION = .5
+        self.UTILITY_CHILD_INCOME = (1 - self.UTILITY_CONSUMPTION)
 
     def set(self, param: str, value: float):
         if hasattr(self, param):
