@@ -27,7 +27,8 @@ class Income(SimMech):
     def _income_shock(self):
         """part of epsilon, the MA(1) process from eq (1)"""
         # in proposition 6, page 19, the authors limit epsilon > 0
-        return self.config.INCOME_NOISE_ADDITIVE * self.generate_positive_shock(self.config.N_FAMILIES)
+        shock = self.generate_white_noise(self.config.N_FAMILIES, 1, 1, 0)
+        return self.config.INCOME_NOISE_ADDITIVE * shock
 
 
     def gain_income(self, earned_income: ndarray):

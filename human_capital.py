@@ -42,8 +42,7 @@ class HumanCapital(SimMech):
 
 
     def _form_skills(self, income: Income, neighborhoods: Neighborhood):
-        """ eq(10). must be increasing and show complementarity """
-        # For now arbitrarily use income * avg(neighborhood_income)
+        """ zeta(*) from eq(10). must be increasing and show complementarity """
         skill = np.zeros(self.config.N_FAMILIES)
         parent_income = income.income[self.globals.t, :]
         parent_neighborhood = neighborhoods.hood[self.globals.t, :]
@@ -51,25 +50,21 @@ class HumanCapital(SimMech):
             # bound below by 1 so we dont get negative skill
             # TODO: actually fix/prevent negative skill due to low income
             par_income = np.maximum(1, parent_income[parent_neighborhood == n])
-            # eq (10): exclude parent income from avg 
+            # eq (10): we exclude parent income from avg 
             avg_income = (par_income.sum() - par_income) / (par_income.size - 1)
-            skill[parent_neighborhood == n] = np.log(par_income) * self.config.SKILL_FROM_PARENT_INCOME + \
-                                              np.log(avg_income) * self.config.SKILL_FROM_NEIGHBOR_INCOME
+            # skill[parent_neighborhood == n] = np.log(par_income) * self.config.SKILL_FROM_PARENT_INCOME + \
+            #                                   np.log(avg_income) * self.config.SKILL_FROM_NEIGHBOR_INCOME
+            skill[parent_neighborhood == n] = self.config.SKILL_FROM_INCOME * \
+                                            np.log(par_income) * np.log(avg_income)
         return skill
 
 
     def earn_income(self):
         """ eq (4) """
         capital_as_child = self.capital[self.globals.t-1, :]
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("error")
-            prod = (self.config.CAPITAL_EFFICIENCY
+        return (self.config.CAPITAL_EFFICIENCY
                 * capital_as_child
                 * self.generate_white_noise(self.config.N_FAMILIES, mean=1))
-            if len(w):
-                self.globals.logger.critical('numerical instability')
-        return prod
-
 
     def develop_human_capital(self, income: Income, neighborhoods: Neighborhood, taxbase: ndarray):
         """ 
