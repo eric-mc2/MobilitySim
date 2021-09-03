@@ -7,7 +7,8 @@ from results import SimResult, SimResultAgg, SimResultSweep
 from income import Income
 from config import Config, Globals, HoodFormation
 from human_capital import HumanCapital
-from neighborhood import Neighborhood, StaticNeighborhood, SortedPairsNeighborhood, SortedNeighborhood
+from neighborhood import StaticNeighborhood, SortedPairsNeighborhood, SortedNeighborhood
+import numpy as np
 
 # TODO: Set a baseline consumption of 1 unit of income. Their preferences kick in above this threshold. 
 #       People die if they can't meet this consumption. This sets a natural scale on the income units and is
@@ -17,20 +18,32 @@ class Sim():
     def __init__(self):
         self.config = Config()
         self.globals = Globals()
-        self.income = Income(self.config, self.globals)
-        self.capital = HumanCapital(self.config, self.globals)
-        switch = {
-            HoodFormation.STATIC : StaticNeighborhood(self.config, self.globals),
-            HoodFormation.PERFECT_SORTING_PAIRS : SortedPairsNeighborhood(self.config, self.globals),
-            HoodFormation.PERFECT_SORTING : SortedNeighborhood(self.config, self.globals)
-        }
-        self.neighborhood = switch[self.config.HOOD_FORMATION]    
+        self.income = None
+        self.capital = None
+        self.neighborhood = None
+
 
     def set(self, param: str, value: float):
         self.config.set(param, value)
 
 
+    def _allocate(self):
+        """ Depends on config which is modifiable by set() so don't call this during __init__()!"""
+        if not self.income:
+            self.income = Income(self.config, self.globals)
+        if not self.capital:
+            self.capital = HumanCapital(self.config, self.globals)
+        if not self.neighborhood:
+            switch = {
+            HoodFormation.STATIC : StaticNeighborhood(self.config, self.globals),
+            HoodFormation.PERFECT_SORTING_PAIRS : SortedPairsNeighborhood(self.config, self.globals),
+            HoodFormation.PERFECT_SORTING : SortedNeighborhood(self.config, self.globals)
+            }        
+            self.neighborhood = switch.get(self.config.HOOD_FORMATION, StaticNeighborhood(self.config, self.globals))
+
+
     def _run_trial(self) -> SimResult:
+        self._allocate()
         self.globals.t = 0
         # Initialize an adult generation
         self.income.initialize_income()

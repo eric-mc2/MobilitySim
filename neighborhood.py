@@ -16,7 +16,7 @@ class Neighborhood(ABC, SimMech):
         self.pop = np.zeros((config.N_TIMESTEPS, config.N_FAMILIES), dtype=np.int32)
         equilib = config.UTILITY_CONSUMPTION / (config.UTILITY_CONSUMPTION + self.config.UTILITY_CHILD_INCOME)
         self.taxrate_pref = np.repeat(equilib, config.N_FAMILIES)
-        self.count = 0
+        self.hood_count = 0
 
     @classmethod
     def _pad_right(cls, arr, length):
@@ -28,7 +28,7 @@ class Neighborhood(ABC, SimMech):
         pop = np.bincount(self.hood[self.globals.t, :])
         padded_pop = Neighborhood._pad_right(pop, self.config.N_FAMILIES) 
         self.pop[self.globals.t, :] = padded_pop
-        self.count = pop.size
+        self.hood_count = pop.size
 
 
     @abstractmethod
@@ -52,7 +52,7 @@ class Neighborhood(ABC, SimMech):
 
     def _compute_tax_revenue(self, taxes: ndarray):
         adult_neighborhood = self.hood[self.globals.t, :]
-        return [taxes[adult_neighborhood == n].sum() for n in range(self.count)]
+        return [taxes[adult_neighborhood == n].sum() for n in range(self.hood_count)]
 
 
     def collect_taxes(self, income: Income):

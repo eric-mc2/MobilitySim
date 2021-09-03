@@ -48,6 +48,5 @@ class Income(SimMech):
     def initialize_income(self):
         """ create initial income distribution """
         # this is arbitrary right now
-        self.income = np.zeros((self.config.N_TIMESTEPS, self.config.N_FAMILIES))
         self.income[0, :] = np.full(self.config.N_FAMILIES, 1)
         self.noise = np.zeros(self.config.N_FAMILIES)
